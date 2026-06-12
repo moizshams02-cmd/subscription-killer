@@ -41,17 +41,21 @@ def analyze_with_vision(image_bytes):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     
-    # Use the model ID verified from your console screenshots
+    # UPDATED: Using the active model ID found in your console screenshot
     payload = {
-        "model": "llama-3.2-11b-vision-preview",
+        "model": "llama-4-scout",
         "messages": [{"role": "user", "content": [
-            {"type": "text", "text": "Extract all recurring subscription charges as JSON."},
+            {"type": "text", "text": "Extract all recurring subscription charges from this bank statement. Return as JSON."},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
         ]}]
     }
     response = requests.post(URL, headers=headers, json=payload)
-    data = response.json()
-    return data['choices'][0]['message']['content']
+    
+    # Error handling for the response
+    if response.status_code != 200:
+        return f"Error: {response.text}"
+        
+    return response.json()['choices'][0]['message']['content']
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
