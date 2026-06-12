@@ -1,4 +1,3 @@
-import base64
 import requests
 import json
 from flask import Flask, render_template_string, request
@@ -17,19 +16,15 @@ HTML_TEMPLATE = """
         body { font-family: sans-serif; background: #0A0A0A; color: white; padding: 20px; }
         .container { max-width: 500px; margin: auto; }
         textarea { width: 100%; height: 100px; background: #1C1C1E; color: white; border-radius: 12px; padding: 15px; border: none; }
-        .scan-box { background: #1C1C1E; padding: 20px; border-radius: 12px; margin: 20px 0; text-align: center; }
-        button { width: 100%; padding: 18px; background: #FF3B30; color: white; border: none; border-radius: 12px; font-weight: bold; }
+        button { width: 100%; padding: 18px; background: #FF3B30; color: white; border: none; border-radius: 12px; font-weight: bold; margin-top: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Subscription Killer</h1>
-        <form method="post" enctype="multipart/form-data">
-            <textarea name="text_input" placeholder="Paste statement text..."></textarea>
-            <div class="scan-box">
-                <input type="file" name="image" accept="image/*" capture="environment">
-            </div>
-            <button type="submit">RUN EXTRACTION</button>
+        <form method="post">
+            <textarea name="text_input" placeholder="Paste statement text here..."></textarea>
+            <button type="submit">RUN ANALYSIS</button>
         </form>
         {% if result %}<div style="margin-top:20px;"><h3>Results:</h3><pre>{{ result }}</pre></div>{% endif %}
     </div>
@@ -37,33 +32,22 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def analyze_with_vision(image_bytes):
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+def analyze_text(text):
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    
-    # UPDATED: Using the active model ID found in your console screenshot
     payload = {
-        "model": "llama-4-scout",
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": "Extract all recurring subscription charges from this bank statement. Return as JSON."},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-        ]}]
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": f"Extract subscription charges from this text: {text}"}]
     }
     response = requests.post(URL, headers=headers, json=payload)
-    
-    # Error handling for the response
-    if response.status_code != 200:
-        return f"Error: {response.text}"
-        
     return response.json()['choices'][0]['message']['content']
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     result = None
     if request.method == 'POST':
-        if 'image' in request.files and request.files['image'].filename:
-            image_data = request.files['image'].read()
-            result = analyze_with_vision(image_data)
+        text = request.form.get('text_input')
+        if text:
+            result = analyze_text(text)
     return render_template_string(HTML_TEMPLATE, result=result)
 
 if __name__ == '__main__':
