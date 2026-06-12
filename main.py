@@ -24,4 +24,54 @@ HTML_TEMPLATE = """
 <body>
     <h1>Subscription Killer</h1>
     <form method="post" enctype="multipart/form-data">
-        
+        <textarea name="text_input" placeholder="Or paste subscription details here..."></textarea>
+        <input type="file" name="image" accept="image/*" capture="environment">
+        <button type="submit">SCAN STATEMENT</button>
+    </form>
+    {% if result %}
+        <h3>Analysis Result:</h3>
+        <pre>{{ result }}</pre>
+    {% endif %}
+</body>
+</html>
+"""
+
+def analyze_image(image_bytes):
+    if not API_KEY: return "Error: API_KEY not configured in Vercel."
+    
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    
+    payload = {
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "messages": [{
+            "role": "user", 
+            "content": [
+                {"type": "text", "text": "Extract all subscription names and charges from this statement and return them as a JSON list."},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+            ]
+        }]
+    }
+    
+    response = requests.post(URL, headers=headers, json=payload)
+    if response.status_code == 200:
+        return response.json()['choices'][0]['message']['content']
+    return f"API Error: {response.text}"
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    result = None
+    if request.method == 'POST':
+        if 'image' in request.files and request.files['image'].filename:
+            result = analyze_image(request.files['image'].read())
+        elif request.form.get('text_input'):
+            # Text fallback
+            headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+            payload = {"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": request.form.get('text_input')}]}
+            res = requests.post(URL, headers=headers, json=payload)
+            result = res.json()['choices'][0]['message']['content']
+            
+    return render_template_string(HTML_TEMPLATE, result=result)
+
+if __name__ == '__main__':
+    app.run(debug=True)
