@@ -4,6 +4,7 @@ import requests
 import os
 import json
 
+# This MUST be at the top level to be found by Vercel
 app = Flask(__name__)
 
 API_KEY = os.environ.get("API_KEY")
@@ -27,7 +28,7 @@ HTML_TEMPLATE = """
     <h1>Subscription Killer</h1>
     <div class="stat-box">MONTHLY BLEED<div class="stat-val">${{ total }}</div></div>
     <form method="post" enctype="multipart/form-data" style="margin-top:20px;">
-        <input type="file" name="image" accept="image/*">
+        <input type="file" name="image" accept="image/*" style="margin-bottom:10px;">
         <button type="submit">SCAN STATEMENT</button>
     </form>
     {{ table_html|safe }}
@@ -41,18 +42,21 @@ def process_data(image_bytes):
     payload = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
         "messages": [
-            {"role": "system", "content": "You are a financial auditor. Identify ONLY recurring subscriptions. IGNORE gas, restaurants, and retail. Return ONLY JSON list with keys 's' (Service), 'a' (Amount as number), 'c' (Strategy)."},
+            {"role": "system", "content": "You are a financial auditor. Identify ONLY recurring subscriptions. IGNORE one-time purchases (gas, food, retail). Return ONLY JSON list with keys 's' (Service), 'a' (Amount), 'c' (Strategy)."},
             {"role": "user", "content": [{"type": "text", "text": "Extract subscriptions."}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}]}
         ]
     }
     response = requests.post(URL, headers=headers, json=payload)
     if response.status_code == 200:
-        content = response.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
-        data = json.loads(content)
-        total = sum(float(item['a']) for item in data)
-        rows = "".join([f"<tr><td>{item['s']}</td><td>${item['a']}</td><td>{item['c']}</td></tr>" for item in data])
-        return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Strategy</th></tr></thead><tbody>{rows}</tbody></table>", f"{total:.2f}"
-    return "", "0.00"
+        try:
+            content = response.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
+            data = json.loads(content)
+            total = sum(float(item['a']) for item in data)
+            rows = "".join([f"<tr><td>{item['s']}</td><td>${item['a']}</td><td>{item['c']}</td></tr>" for item in data])
+            return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Strategy</th></tr></thead><tbody>{rows}</tbody></table>", f"{total:.2f}"
+        except:
+            return "<tr><td colspan='3'>Could not parse data.</td></tr>", "0.00"
+    return "<tr><td colspan='3'>API Error.</td></tr>", "0.00"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
