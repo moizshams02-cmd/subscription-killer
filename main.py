@@ -4,7 +4,6 @@ import requests
 import os
 import json
 
-# REQUIRED: Top-level Flask instance
 app = Flask(__name__)
 
 API_KEY = os.environ.get("API_KEY")
@@ -26,7 +25,7 @@ HTML_TEMPLATE = """
     <div class="card">MONTHLY BLEED<div class="stat-val">${{ total }}</div></div>
     <form method="post" enctype="multipart/form-data">
         <label for="f" class="btn-label">TAP TO SCAN STATEMENT</label>
-        <input type="file" name="image" accept="image/*" id="f" onchange="this.form.submit()" style="display:none;">
+        <input type="file" name="image" accept="image/*" capture="environment" id="f" onchange="this.form.submit()" style="display:none;">
     </form>
     {{ table_html|safe }}
 </body>
@@ -45,11 +44,14 @@ def process(image_bytes):
     }
     resp = requests.post(URL, headers=headers, json=payload)
     if resp.status_code == 200:
-        data = json.loads(resp.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip())
-        total = sum(float(item['a']) for item in data)
-        rows = "".join([f"<tr><td>{item['s']}</td><td>${item['a']}</td><td>{item['c']}</td></tr>" for item in data])
-        return f"<table>{rows}</table>", f"{total:.2f}"
-    return "", "0.00"
+        try:
+            content = resp.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip()
+            data = json.loads(content)
+            total = sum(float(item['a']) for item in data)
+            rows = "".join([f"<tr><td>{item['s']}</td><td>${item['a']}</td><td>{item['c']}</td></tr>" for item in data])
+            return f"<table>{rows}</table>", f"{total:.2f}"
+        except: return "<tr><td>Error</td></tr>", "0.00"
+    return "<tr><td>API Error</td></tr>", "0.00"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
