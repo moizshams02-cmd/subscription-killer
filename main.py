@@ -1,59 +1,59 @@
 import json
 import requests
+import base64
 from flask import Flask, render_template_string, request
 from config import API_KEY
 
 app = Flask(__name__)
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
-SYSTEM_INSTRUCTION = """
-You are the elite AI Brain of the 'Subscription Killer' enterprise dashboard.
-Extract recurring subscriptions from the provided bank statement (text or image).
-Return ONLY a valid JSON object with a 'subscriptions' key containing an array of objects:
-{'service_name': str, 'cost': float, 'currency_symbol': str, 'cancel_method': str}.
-"""
-
-# The optimized Mobile-First HTML/CSS Template
+# Optimized Mobile-First HTML
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Subscription Killer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0A0A0A; color: white; margin: 0; padding: 20px; box-sizing: border-box; }
-        .container { max-width: 500px; margin: 0 auto; }
-        h1 { font-size: 24px; text-align: center; margin-bottom: 20px; }
-        textarea { width: 100%; height: 120px; background: #1C1C1E; color: white; border: 1px solid #333; border-radius: 12px; padding: 15px; font-size: 16px; margin-bottom: 15px; box-sizing: border-box; }
-        .file-input-group { background: #1C1C1E; padding: 15px; border-radius: 12px; margin-bottom: 20px; text-align: center; }
-        button { width: 100%; padding: 18px; background: #FF3B30; color: white; border: none; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; }
-        .result-card { background: #1C1C1E; padding: 15px; border-radius: 12px; margin-top: 20px; }
+        body { font-family: sans-serif; background: #0A0A0A; color: white; padding: 20px; }
+        textarea, .file-input { width: 100%; background: #1C1C1E; color: white; border-radius: 12px; padding: 15px; margin-bottom: 15px; }
+        button { width: 100%; padding: 18px; background: #FF3B30; color: white; border: none; border-radius: 12px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Subscription Killer</h1>
-        <form method="post" enctype="multipart/form-data">
-            <textarea name="text_input" placeholder="Paste bank data here..."></textarea>
-            <div class="file-input-group">
-                <label>Scan Statement:</label><br><br>
-                <input type="file" name="image" accept="image/*" capture="environment">
-            </div>
-            <button type="submit">RUN EXTRACTION</button>
-        </form>
-    </div>
+    <h1>Subscription Killer</h1>
+    <form method="post" enctype="multipart/form-data">
+        <textarea name="text_input" placeholder="Paste data..."></textarea>
+        <div class="file-input">
+            <label>Scan Statement:</label>
+            <input type="file" name="image" accept="image/*" capture="environment">
+        </div>
+        <button type="submit">RUN EXTRACTION</button>
+    </form>
 </body>
 </html>
 """
 
-def analyze_input(data_input, is_image=False):
-    # This keeps your existing extraction logic
-    # In a production app, you'd send image bytes here
-    return {"status": "success", "data": "Analysis Logic Placeholder"}
+def analyze_with_vision(image_bytes):
+    # Convert image to base64 for the API
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.2-90b-vision-preview",
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": "Extract subscriptions from this statement."},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+        ]}]
+    }
+    return requests.post(URL, headers=headers, json=payload).json()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    if request.method == 'POST':
+        # Handle Image
+        if 'image' in request.files and request.files['image'].filename:
+            image_data = request.files['image'].read()
+            results = analyze_with_vision(image_data)
+            return f"<pre>{json.dumps(results, indent=2)}</pre>"
     return render_template_string(HTML_TEMPLATE)
 
 if __name__ == '__main__':
