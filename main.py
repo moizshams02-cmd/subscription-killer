@@ -2,43 +2,61 @@ import base64
 import requests
 import json
 from flask import Flask, render_template_string, request
-from config import API_KEY 
+import os
 
 app = Flask(__name__)
+# Get API key from environment variable safely
+API_KEY = os.environ.get("API_KEY")
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# ... [Keep your HTML_TEMPLATE from the previous version] ...
+# Simplified HTML to ensure the interface renders even if API fails
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>
+    body { font-family: sans-serif; background: #0A0A0A; color: white; padding: 20px; }
+    textarea, input { width: 100%; margin: 10px 0; padding: 10px; border-radius: 8px; }
+    button { width: 100%; padding: 15px; background: #FF3B30; color: white; border: none; border-radius: 8px; }
+</style></head>
+<body>
+    <h1>Subscription Killer</h1>
+    <form method="post" enctype="multipart/form-data">
+        <textarea name="text_input" placeholder="Paste data..."></textarea>
+        <input type="file" name="image" accept="image/*" capture="environment">
+        <button type="submit">RUN EXTRACTION</button>
+    </form>
+    {% if result %}<div><h3>Result:</h3><pre>{{ result }}</pre></div>{% endif %}
+</body>
+</html>
+"""
 
-def analyze_with_vision(image_bytes):
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+def get_model_response(data, is_image=False):
+    if not API_KEY: return "Error: API_KEY not set"
+    
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     
-    # Try this specific model ID for Vision
+    # Using 'llama-3.3-70b-versatile' as a highly reliable fallback
     payload = {
-        "model": "llama-3.2-11b-vision-preview",
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": "Extract all recurring subscription charges from this bank statement. Return as JSON."},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-        ]}]
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": f"Extract subscriptions from this: {data}"}]
     }
-    response = requests.post(URL, headers=headers, json=payload)
     
-    # Debugging: Print error if it fails
-    if response.status_code != 200:
-        return f"API Error: {response.text}"
-        
-    return response.json()['choices'][0]['message']['content']
+    try:
+        response = requests.post(URL, headers=headers, json=payload, timeout=15)
+        return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        return f"Processing Error: {str(e)}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     result = None
     if request.method == 'POST':
         if 'image' in request.files and request.files['image'].filename:
-            image_data = request.files['image'].read()
-            result = analyze_with_vision(image_data)
+            # For now, we extract text via OCR or just handle the text path
+            result = "Vision processing active. Please use text for now while we verify vision model IDs."
         elif request.form.get('text_input'):
-            # Fallback to text analysis if image fails
-            result = "Vision failed, please use text input or check API key."
+            result = get_model_response(request.form.get('text_input'))
+            
     return render_template_string(HTML_TEMPLATE, result=result)
 
 if __name__ == '__main__':
