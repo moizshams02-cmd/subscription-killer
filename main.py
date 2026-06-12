@@ -5,7 +5,7 @@ from flask import Flask, render_template_string, request
 
 app = Flask(__name__)
 
-# Vercel retrieves this from the Environment Variables you configured
+# Vercel retrieves this from your Environment Variables
 API_KEY = os.environ.get("API_KEY")
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -15,22 +15,25 @@ HTML_TEMPLATE = """
 <head><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
     body { font-family: -apple-system, sans-serif; background: #000; color: #fff; padding: 20px; }
-    textarea { width: 100%; height: 120px; padding: 10px; border-radius: 8px; background: #1a1a1a; color: #fff; border: 1px solid #333; }
-    input[type="file"] { width: 100%; margin: 20px 0; padding: 10px; border: 1px dashed #555; border-radius: 8px; }
-    button { width: 100%; padding: 16px; background: #fff; color: #000; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-    pre { background: #111; padding: 15px; border-radius: 8px; overflow-x: auto; border: 1px solid #333; }
+    .card { background: #1a1a1a; padding: 20px; border-radius: 12px; margin-top: 20px; border: 1px solid #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th { color: #888; font-size: 12px; text-transform: uppercase; text-align: left; padding: 10px; border-bottom: 1px solid #333; }
+    td { padding: 10px; border-bottom: 1px solid #222; }
+    .price { color: #FF3B30; font-weight: bold; }
+    button { width: 100%; padding: 16px; background: #fff; color: #000; border: none; border-radius: 8px; font-weight: bold; margin-top: 20px; cursor: pointer; }
 </style>
 </head>
 <body>
     <h1>Subscription Killer</h1>
     <form method="post" enctype="multipart/form-data">
-        <textarea name="text_input" placeholder="Or paste subscription details here..."></textarea>
         <input type="file" name="image" accept="image/*" capture="environment">
         <button type="submit">SCAN STATEMENT</button>
     </form>
     {% if result %}
-        <h3>Analysis Result:</h3>
-        <pre>{{ result }}</pre>
+    <div class="card">
+        <h3>Detected Subscriptions</h3>
+        {{ result|safe }}
+    </div>
     {% endif %}
 </body>
 </html>
@@ -42,12 +45,13 @@ def analyze_image(image_bytes):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     
+    # Prompt optimized to force a clean HTML Table
     payload = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
         "messages": [{
             "role": "user", 
             "content": [
-                {"type": "text", "text": "Extract all subscription names and charges from this statement and return them as a JSON list."},
+                {"type": "text", "text": "Extract all subscription names and charges from this statement. Return ONLY a clean, valid HTML table with columns 'Service' and 'Amount'. Do not include any introductory or concluding text outside the table."},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
             ]
         }]
@@ -61,15 +65,8 @@ def analyze_image(image_bytes):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     result = None
-    if request.method == 'POST':
-        if 'image' in request.files and request.files['image'].filename:
-            result = analyze_image(request.files['image'].read())
-        elif request.form.get('text_input'):
-            # Text fallback
-            headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": request.form.get('text_input')}]}
-            res = requests.post(URL, headers=headers, json=payload)
-            result = res.json()['choices'][0]['message']['content']
+    if request.method == 'POST' and 'image' in request.files and request.files['image'].filename:
+        result = analyze_image(request.files['image'].read())
             
     return render_template_string(HTML_TEMPLATE, result=result)
 
