@@ -38,4 +38,21 @@ def process(image_bytes):
     payload = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
         "messages": [
-            {"role": "system", "content": "You are a financial auditor. Identify recurring subscriptions. Ignore one-time purchases. Return ONLY
+            {"role": "system", "content": "You are a financial auditor. Identify recurring subscriptions. Ignore one-time purchases. Return ONLY JSON list with keys 's' (Service), 'a' (Amount), 'c' (Strategy)."},
+            {"role": "user", "content": [{"type": "text", "text": "Extract."}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}
+        ]
+    }
+    resp = requests.post(URL, headers=headers, json=payload)
+    if resp.status_code == 200:
+        data = json.loads(resp.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip())
+        total = sum(float(item['a']) for item in data)
+        rows = "".join([f"<tr><td>{item['s']}</td><td>{item['a']}</td><td>{item['c']}</td></tr>" for item in data])
+        return f"<table>{rows}</table>", f"{total:.2f}"
+    return "", "0.00"
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    t, tot = "", "0.00"
+    if request.method == 'POST' and 'image' in request.files:
+        t, tot = process(request.files['image'].read())
+    return render_template_string(HTML_TEMPLATE, table_html=t, total=tot)
