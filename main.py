@@ -4,6 +4,7 @@ import requests
 import os
 import json
 
+# REQUIRED: Top-level Flask instance
 app = Flask(__name__)
 
 API_KEY = os.environ.get("API_KEY")
@@ -46,7 +47,7 @@ def process(image_bytes):
     if resp.status_code == 200:
         data = json.loads(resp.json()['choices'][0]['message']['content'].replace("```json", "").replace("```", "").strip())
         total = sum(float(item['a']) for item in data)
-        rows = "".join([f"<tr><td>{item['s']}</td><td>{item['a']}</td><td>{item['c']}</td></tr>" for item in data])
+        rows = "".join([f"<tr><td>{item['s']}</td><td>${item['a']}</td><td>{item['c']}</td></tr>" for item in data])
         return f"<table>{rows}</table>", f"{total:.2f}"
     return "", "0.00"
 
