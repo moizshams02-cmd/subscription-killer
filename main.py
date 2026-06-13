@@ -1,10 +1,10 @@
 from flask import Flask, render_template_string, request
 import base64
 import requests
-import os
 import json
+import os
 
-app = Flask(__name__)
+app = Flask(__name__)  # This must be at the top level
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -16,3 +16,44 @@ HTML_TEMPLATE = """
         <button type="submit" id="b" style="padding:10px; width:100%;">AUDIT BATCH</button>
     </form>
     <div id="r" style="margin-top:20px;"></div>
+    <script>
+        document.getElementById('u').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('b');
+            const resDiv = document.getElementById('r');
+            btn.disabled = true;
+            const files = document.getElementById('f').files;
+            
+            for (let i = 0; i < files.length; i++) {
+                if (i > 0) await new Promise(r => setTimeout(r, 3000));
+                resDiv.innerHTML += `<div>Processing image ${i+1}...</div>`;
+                
+                const bmp = await createImageBitmap(files[i]);
+                const canvas = document.createElement('canvas');
+                const scale = Math.min(400 / bmp.width, 1);
+                canvas.width = bmp.width * scale; canvas.height = bmp.height * scale;
+                canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.2));
+                
+                const fd = new FormData();
+                fd.append('i', blob);
+                const res = await fetch('/', { method: 'POST', body: fd });
+                resDiv.innerHTML += await res.text() + "<hr>";
+            }
+            btn.disabled = false;
+        };
+    </script>
+</body>
+</html>
+"""
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'GET': return render_template_string(HTML_TEMPLATE)
+    
+    api_key = os.environ.get('API_KEY')
+    if not api_key: return "Server Error: API_KEY missing."
+    
+    try:
+        img = request.files.get("i")
+        b64 = base64.b64encode(
