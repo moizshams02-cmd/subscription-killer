@@ -1,5 +1,5 @@
 from flask import Flask
-# Top-level instance MUST be defined immediately for Vercel
+# Top-level 'app' instance is required by Vercel's Python builder
 app = Flask(__name__)
 
 from flask import render_template_string, request
@@ -19,6 +19,8 @@ HTML_TEMPLATE = """
 <style>
     body { font-family: sans-serif; background: #000; color: #fff; padding: 20px; }
     .btn { padding: 16px; background: #fff; color: #000; border-radius: 8px; font-weight: bold; width: 100%; border: none; cursor: pointer; }
+    table { width: 100%; color: #fff; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 10px; border: 1px solid #333; text-align: left; }
 </style>
 </head>
 <body>
@@ -35,12 +37,12 @@ HTML_TEMPLATE = """
 
 def process_data(image_bytes):
     api_key = os.environ.get("API_KEY")
-    if not api_key: return "", "CRITICAL: API_KEY missing."
+    if not api_key: return "", "CRITICAL ERROR: API_KEY is missing in Vercel settings."
 
     b64 = base64.b64encode(image_bytes).decode('utf-8')
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
-    # Using a currently supported vision model
+    # Updated to a currently supported Groq vision model
     payload = {
         "model": "llama-3.2-11b-vision-preview",
         "messages": [
