@@ -4,7 +4,7 @@ import requests
 import os
 import json
 
-# REQUIRED: This must be the very first thing
+# 1. MUST BE AT THE TOP LEVEL
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
@@ -14,14 +14,14 @@ HTML_TEMPLATE = """
 <style>
     body { font-family: sans-serif; background: #000; color: #fff; padding: 20px; }
     .btn { padding: 16px; background: #fff; color: #000; border-radius: 8px; font-weight: bold; width: 100%; border: none; cursor: pointer; }
-    table { width: 100%; margin-top: 20px; border-collapse: collapse; }
-    th, td { border: 1px solid #444; padding: 8px; text-align: left; font-size: 14px; }
+    table { width: 100%; margin-top: 20px; border-collapse: collapse; color: #fff; }
+    th, td { border: 1px solid #444; padding: 8px; text-align: left; }
 </style>
 </head>
 <body>
-    <h1>Statement Auditor</h1>
+    <h1>Financial Auditor</h1>
     <form id="uploadForm" enctype="multipart/form-data">
-        <input type="file" id="fileInput" accept="image/*" multiple required style="margin-bottom:10px;">
+        <input type="file" id="fileInput" accept="image/*" multiple required style="margin: 10px 0;">
         <button type="submit" class="btn">AUDIT STATEMENT</button>
     </form>
     <div id="status"></div>
@@ -36,51 +36,46 @@ HTML_TEMPLATE = """
             for (let file of files) {
                 const bitmap = await createImageBitmap(file);
                 const canvas = document.createElement('canvas');
-                const scale = Math.min(1000 / bitmap.width, 1);
+                const scale = Math.min(800 / bitmap.width, 1);
                 canvas.width = bitmap.width * scale;
                 canvas.height = bitmap.height * scale;
                 canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
                 formData.append('images', blob, file.name);
             }
-            const response = await fetch('/', { method: 'POST', body: formData });
-            document.getElementById('results').innerHTML = await response.text();
-            status.innerText = "Audit Complete.";
+            const res = await fetch('/', { method: 'POST', body: formData });
+            document.getElementById('results').innerHTML = await res.text();
+            status.innerText = "Done!";
         };
     </script>
 </body>
 </html>
 """
 
-def process_batch(image_list):
+def process_statement(image_file):
     api_key = os.environ.get("API_KEY")
-    if not api_key: return "API Key missing."
+    if not api_key: return "<tr><td>Error: API Key missing</td></tr>"
     
-    all_rows = ""
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    URL = "https://api.groq.com/openai/v1/chat/completions"
+    b64 = base64.b64encode(image_file.read()).decode('utf-8')
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": f"Extract rows from this statement table. Return JSON list: [{'s': 'desc', 'a': 'amt', 'c': 'date'}]. No markdown. Image: data:image/jpeg;base64,{b64}"}]
+    }
     
-    for img_file in image_list:
-        b64 = base64.b64encode(img_file.read()).decode('utf-8')
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [{
-                "role": "user",
-                "content": f"Extract all transactions from this table. Return ONLY a JSON list of objects: [{'s': 'Description', 'a': 'Amount', 'c': 'Date'}]. Do not include headers or markdown. Image: data:image/jpeg;base64,{b64}"
-            }]
-        }
-        try:
-            resp = requests.post(URL, headers=headers, json=payload)
-            content = resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', '')
-            data = json.loads(content)
-            for item in data:
-                all_rows += f"<tr><td>{item.get('s')}</td><td>{item.get('a')}</td><td>{item.get('c')}</td></tr>"
-        except: continue
-            
-    if not all_rows: return "Could not parse table data."
-    return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Date</th></tr></thead><tbody>{all_rows}</tbody></table>"
+    try:
+        resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
+                             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
+                             json=payload)
+        content = resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', '')
+        data = json.loads(content)
+        return "".join([f"<tr><td>{item.get('s')}</td><td>{item.get('a')}</td><td>{item.get('c')}</td></tr>" for item in data])
+    except Exception as e:
+        return f"<tr><td>Error: {str(e)}</td></tr>"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'POST': return process_batch(request.files.getlist("images"))
+    if request.method == 'POST':
+        images = request.files.getlist("images")
+        rows = "".join([process_statement(img) for img in images])
+        return f"<table><tr><th>Service</th><th>Amount</th><th>Date</th></tr>{rows}</table>"
     return render_template_string(HTML_TEMPLATE)
