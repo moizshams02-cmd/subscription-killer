@@ -31,8 +31,8 @@ HTML_TEMPLATE = """
             const scale = Math.min(400 / bmp.width, 1);
             canvas.width = bmp.width * scale; canvas.height = bmp.height * scale;
             canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
-            // Low quality JPEG (0.3) to minimize payload size
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.3));
+            // Low quality JPEG (0.2) ensures extremely small payload
+            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.2));
             
             const fd = new FormData();
             fd.append('i', blob);
@@ -57,9 +57,11 @@ def index():
         img = request.files.get("i")
         b64 = base64.b64encode(img.read()).decode('utf-8')
         
+        # Using {{ }} to correctly escape the curly braces for JSON structure
+        prompt = "Extract rows as JSON list of objects. Keys: 's','a','c'. Example format: [{'s':'desc','a':'amt','c':'date'}]. NO markdown."
         payload = {
             "model": "llama-3.3-70b-versatile",
-            "messages": [{"role": "user", "content": f"Extract rows as JSON list [{'s':'desc','a':'amt','c':'date'}]. NO extra text. Data: data:image/jpeg;base64,{b64}"}]
+            "messages": [{"role": "user", "content": f"{prompt} Data: data:image/jpeg;base64,{b64}"}]
         }
         
         resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
