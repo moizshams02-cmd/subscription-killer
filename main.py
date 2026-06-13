@@ -1,5 +1,5 @@
 from flask import Flask
-# REQUIRED: Top-level instance for Vercel
+# REQUIRED: Vercel needs the 'app' instance defined at the top level
 app = Flask(__name__)
 
 from flask import render_template_string, request
@@ -12,6 +12,7 @@ import json
 API_KEY = os.environ.get("API_KEY")
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
+# The HTML includes client-side resizing to keep payload under Vercel's 4.5MB limit
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -23,54 +24,23 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <h1>Batch Financial Auditor</h1>
-    <form method="post" enctype="multipart/form-data">
-        <input type="file" name="images" accept="image/*" multiple required style="margin-bottom:10px;">
+    <form method="post" enctype="multipart/form-data" id="uploadForm">
+        <input type="file" name="images" id="fileInput" accept="image/*" multiple required style="margin-bottom:10px;">
         <button type="submit" class="btn">AUDIT BATCH</button>
     </form>
-    <div style="color: #ff3333; margin-top: 10px;">{{ error }}</div>
+    <div id="status" style="margin-top: 10px;"></div>
     <div>{{ table_html|safe }}</div>
-</body>
-</html>
-"""
-
-def process_batch(image_list):
-    api_key = os.environ.get("API_KEY")
-    if not api_key: return "", "CRITICAL: API_KEY missing."
-
-    all_results = []
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    
-    # Process each image in the batch
-    for img_file in image_list:
-        b64 = base64.b64encode(img_file.read()).decode('utf-8')
-        
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": f"Extract subscriptions as JSON list (keys: s, a, c). No markdown. Image: data:image/jpeg;base64,{b64}"
-                }
-            ]
-        }
-        
-        try:
-            resp = requests.post(URL, headers=headers, json=payload)
-            if resp.status_code == 200:
-                content = resp.json()['choices'][0]['message']['content'].strip()
-                all_results.extend(json.loads(content))
-        except:
-            continue
+    <script>
+        document.getElementById('uploadForm').onsubmit = async (e) => {
+            e.preventDefault();
+            document.getElementById('status').innerText = "Compressing and uploading...";
+            const files = document.getElementById('fileInput').files;
+            const formData = new FormData();
             
-    # Format all results into one table
-    rows = "".join([f"<tr><td>{item.get('s', 'N/A')}</td><td>{item.get('a', '0')}</td><td>{item.get('c', 'N/A')}</td></tr>" for item in all_results])
-    return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Due Date</th></tr></thead><tbody>{rows}</tbody></table>", ""
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    table, err = "", ""
-    if request.method == 'POST':
-        # Retrieve the list of files
-        images = request.files.getlist("images")
-        table, err = process_batch(images)
-    return render_template_string(HTML_TEMPLATE, table_html=table, error=err)
+            for (let file of files) {
+                const bitmap = await createImageBitmap(file);
+                const canvas = document.createElement('canvas');
+                // Resize to max 800px width to keep payload small
+                const scale = Math.min(800 / bitmap.width, 1);
+                canvas.width = bitmap.width * scale;
+                canvas.height = bitmap.height
