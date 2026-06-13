@@ -4,22 +4,22 @@ import requests
 import os
 import json
 
+# REQUIRED: This must be the very first thing
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { font-family: sans-serif; background: #000; color: #fff; padding: 20px; }
-        .btn { padding: 16px; background: #fff; color: #000; border-radius: 8px; font-weight: bold; width: 100%; border: none; cursor: pointer; }
-        table { width: 100%; margin-top: 20px; border-collapse: collapse; }
-        th, td { border: 1px solid #444; padding: 8px; text-align: left; font-size: 14px; }
-    </style>
+<head><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body { font-family: sans-serif; background: #000; color: #fff; padding: 20px; }
+    .btn { padding: 16px; background: #fff; color: #000; border-radius: 8px; font-weight: bold; width: 100%; border: none; cursor: pointer; }
+    table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+    th, td { border: 1px solid #444; padding: 8px; text-align: left; font-size: 14px; }
+</style>
 </head>
 <body>
-    <h1>Financial Statement Auditor</h1>
+    <h1>Statement Auditor</h1>
     <form id="uploadForm" enctype="multipart/form-data">
         <input type="file" id="fileInput" accept="image/*" multiple required style="margin-bottom:10px;">
         <button type="submit" class="btn">AUDIT STATEMENT</button>
@@ -30,7 +30,7 @@ HTML_TEMPLATE = """
         document.getElementById('uploadForm').onsubmit = async (e) => {
             e.preventDefault();
             const status = document.getElementById('status');
-            status.innerText = "Analyzing table data...";
+            status.innerText = "Processing...";
             const files = document.getElementById('fileInput').files;
             const formData = new FormData();
             for (let file of files) {
@@ -62,17 +62,17 @@ def process_batch(image_list):
     
     for img_file in image_list:
         b64 = base64.b64encode(img_file.read()).decode('utf-8')
-        # Instructing the AI to be a 'Table Reader'
         payload = {
             "model": "llama-3.3-70b-versatile",
             "messages": [{
                 "role": "user",
-                "content": f"You are a financial auditor. Extract all transactions from this table. Return ONLY a JSON list of objects: [{'s': 'Description', 'a': 'Amount', 'c': 'Date'}]. Do not include headers or filler. If the image is a table, extract every row. Image: data:image/jpeg;base64,{b64}"
+                "content": f"Extract all transactions from this table. Return ONLY a JSON list of objects: [{'s': 'Description', 'a': 'Amount', 'c': 'Date'}]. Do not include headers or markdown. Image: data:image/jpeg;base64,{b64}"
             }]
         }
         try:
             resp = requests.post(URL, headers=headers, json=payload)
-            data = json.loads(resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', ''))
+            content = resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', '')
+            data = json.loads(content)
             for item in data:
                 all_rows += f"<tr><td>{item.get('s')}</td><td>{item.get('a')}</td><td>{item.get('c')}</td></tr>"
         except: continue
