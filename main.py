@@ -22,14 +22,9 @@ HTML_TEMPLATE = """
             const btn = document.getElementById('b');
             const resDiv = document.getElementById('r');
             btn.disabled = true;
-            resDiv.innerText = "Analyzing batch... (this may take 10-15s)";
-            
+            resDiv.innerText = "Analyzing...";
             const fd = new FormData();
-            const files = document.getElementById('f').files;
-            for (let i = 0; i < files.length; i++) {
-                fd.append('images', files[i]);
-            }
-            
+            for (let f of document.getElementById('f').files) fd.append('images', f);
             try {
                 const res = await fetch('/', { method: 'POST', body: fd });
                 resDiv.innerHTML = await res.text();
@@ -53,21 +48,25 @@ def index():
             b64 = base64.b64encode(img.read()).decode('utf-8')
             payload = {
                 "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": f"Extract table rows. Return ONLY a valid JSON list of objects with keys 's', 'a', and 'c'. Example: [{{'s':'desc','a':'amt','c':'date'}}]. Do not wrap in markdown. Image data: data:image/jpeg;base64,{b64}"}]
+                "messages": [{"role": "user", "content": f"Extract rows. JSON list with keys 's','a','c'. No markdown. Image: data:image/jpeg;base64,{b64}"}]
             }
             
             resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
                                  headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
                                  json=payload, timeout=25)
             
-            content = resp.json()['choices'][0]['message']['content'].strip()
-            # Clean potential markdown artifacts
+            # DIAGNOSTIC: If status is not 200, return the raw response to find the error
+            if resp.status_code != 200:
+                results_html += f"<div style='color:orange;'>API Error {resp.status_code}: {resp.text[:100]}</div>"
+                continue
+
+            content = resp.json().get('choices', [])[0]['message']['content'].strip()
             clean_content = content.replace('```json', '').replace('```', '').strip()
             data = json.loads(clean_content)
             
             for item in data:
                 results_html += f"<div style='border-bottom:1px solid #444; padding:5px;'>{item.get('s', 'N/A')} | {item.get('a', 'N/A')} | {item.get('c', 'N/A')}</div>"
         except Exception as e:
-            results_html += f"<div style='color:red;'>Failed to process an image: {str(e)}</div>"
+            results_html += f"<div style='color:red;'>Failed: {str(e)}</div>"
             
     return results_html
