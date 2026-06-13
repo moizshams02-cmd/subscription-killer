@@ -4,10 +4,9 @@ import requests
 import os
 import json
 
-# REQUIRED: Flask app instance must be at the top level for Vercel
+# REQUIRED: Top-level instance for Vercel
 app = Flask(__name__)
 
-# HTML Template with Client-Side Compression to prevent 413 Errors
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -20,23 +19,24 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <h1>Batch Financial Auditor</h1>
-    <form method="post" enctype="multipart/form-data" id="uploadForm">
-        <input type="file" name="images" id="fileInput" accept="image/*" multiple required style="margin-bottom:10px;">
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="fileInput" accept="image/*" multiple required style="margin-bottom:10px;">
         <button type="submit" class="btn">AUDIT BATCH</button>
     </form>
     <div id="status" style="margin-top: 10px;"></div>
-    <div>{{ table_html|safe }}</div>
+    <div id="results"></div>
     <script>
         document.getElementById('uploadForm').onsubmit = async (e) => {
             e.preventDefault();
-            document.getElementById('status').innerText = "Compressing and uploading...";
+            const status = document.getElementById('status');
+            status.innerText = "Compressing and uploading...";
             const files = document.getElementById('fileInput').files;
             const formData = new FormData();
             
             for (let file of files) {
                 const bitmap = await createImageBitmap(file);
                 const canvas = document.createElement('canvas');
-                // Resize to max 800px width to ensure payload stays under Vercel's 4.5MB limit
+                // Resize to max 800px width to avoid 413 Payload Error
                 const scale = Math.min(800 / bitmap.width, 1);
                 canvas.width = bitmap.width * scale;
                 canvas.height = bitmap.height * scale;
@@ -44,7 +44,11 @@ HTML_TEMPLATE = """
                 const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.7));
                 formData.append('images', blob, file.name);
             }
-            fetch('/', { method: 'POST', body: formData }).then(() => location.reload());
+            
+            const response = await fetch('/', { method: 'POST', body: formData });
+            const html = await response.text();
+            document.getElementById('results').innerHTML = html;
+            status.innerText = "Done!";
         };
     </script>
 </body>
@@ -53,7 +57,7 @@ HTML_TEMPLATE = """
 
 def process_batch(image_list):
     api_key = os.environ.get("API_KEY")
-    if not api_key: return "", "CRITICAL: API_KEY missing."
+    if not api_key: return "API_KEY missing."
 
     all_results = []
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -66,7 +70,7 @@ def process_batch(image_list):
             "messages": [
                 {
                     "role": "user",
-                    "content": f"Extract subscriptions as JSON list (keys: s=service, a=amount, c=due_date). No markdown. Image: data:image/jpeg;base64,{b64}"
+                    "content": f"Extract subscriptions (s=service, a=amount, c=due_date). No markdown. JSON only. Image: data:image/jpeg;base64,{b64}"
                 }
             ]
         }
@@ -75,16 +79,13 @@ def process_batch(image_list):
             if resp.status_code == 200:
                 content = resp.json()['choices'][0]['message']['content'].strip()
                 all_results.extend(json.loads(content))
-        except:
-            continue
+        except: continue
             
     rows = "".join([f"<tr><td>{item.get('s', 'N/A')}</td><td>{item.get('a', '0')}</td><td>{item.get('c', 'N/A')}</td></tr>" for item in all_results])
-    return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Due Date</th></tr></thead><tbody>{rows}</tbody></table>", ""
+    return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Due Date</th></tr></thead><tbody>{rows}</tbody></table>"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    table, err = "", ""
     if request.method == 'POST':
-        images = request.files.getlist("images")
-        table, err = process_batch(images)
-    return render_template_string(HTML_TEMPLATE, table_html=table, error=err)
+        return process_batch(request.files.getlist("images"))
+    return render_template_string(HTML_TEMPLATE)
