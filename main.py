@@ -4,12 +4,14 @@ import requests
 import os
 import json
 
-# REQUIRED: Top-level Flask instance
+# Top-level Flask instance - Required by Vercel
 app = Flask(__name__)
 
+# Configuration
 API_KEY = os.environ.get("API_KEY")
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
+# UI Template
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -34,20 +36,19 @@ HTML_TEMPLATE = """
 """
 
 def process_data(image_bytes):
-    api_key = os.environ.get("API_KEY")
-    if not api_key: return "", "CRITICAL: API_KEY missing."
+    if not API_KEY: return "", "CRITICAL: API_KEY missing in Vercel settings."
 
     b64 = base64.b64encode(image_bytes).decode('utf-8')
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     
-    # Using the standard vision model payload
+    # Corrected Payload Structure for Groq Vision models
     payload = {
-        "model": "llama-3.2-90b-vision-preview",
+        "model": "llama-3.2-11b-vision-preview",
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Extract recurring subscriptions as a JSON list. Include 's' (Service), 'a' (Amount), 'c' (Strategy). No markdown."},
+                    {"type": "text", "text": "Extract all recurring subscriptions as a JSON list. For each, include 's' (Service), 'a' (Amount), 'c' (Strategy). Output ONLY valid JSON, no markdown code blocks."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                 ]
             }
@@ -57,8 +58,10 @@ def process_data(image_bytes):
     try:
         resp = requests.post(URL, headers=headers, json=payload)
         resp.raise_for_status()
+        
         content = resp.json()['choices'][0]['message']['content'].strip()
         data = json.loads(content)
+        
         rows = "".join([f"<tr><td>{item.get('s', 'N/A')}</td><td>{item.get('a', '0')}</td><td>{item.get('c', 'N/A')}</td></tr>" for item in data])
         return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Strategy</th></tr></thead><tbody>{rows}</tbody></table>", ""
     except Exception as e:
