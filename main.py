@@ -39,14 +39,14 @@ def process_data(image_bytes):
     b64 = base64.b64encode(image_bytes).decode('utf-8')
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
-    # EXACT PAYLOAD STRUCTURE FOR GROQ VISION
+    # Corrected Multimodal Payload Structure
     payload = {
         "model": "llama-3.2-90b-vision-preview",
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Extract recurring subscriptions as a JSON list. Keys: s (Service), a (Amount), c (Strategy). No markdown."},
+                    {"type": "text", "text": "Extract subscriptions as JSON list. Keys: s (Service), a (Amount), c (Strategy). No markdown."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                 ]
             }
