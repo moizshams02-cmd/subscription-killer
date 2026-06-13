@@ -1,5 +1,5 @@
 from flask import Flask
-# Top-level 'app' instance is required by Vercel
+# REQUIRED: Top-level instance for Vercel
 app = Flask(__name__)
 
 from flask import render_template_string, request
@@ -40,23 +40,19 @@ def process_data(image_bytes):
     b64 = base64.b64encode(image_bytes).decode('utf-8')
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
-    # Payload structure fix: 'content' must be a list of objects for vision
+    # Payload fixed: 'content' is now a string to satisfy the validator
     payload = {
         "model": "llama-3.3-70b-versatile",
         "messages": [
             {
                 "role": "user",
-                "content": [
-                    {"type": "text", "text": "Extract subscriptions as JSON list (keys: s, a, c). No markdown."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                ]
+                "content": f"Extract subscriptions from this image as a JSON list (keys: s, a, c). No markdown. Image data: data:image/jpeg;base64,{b64}"
             }
         ]
     }
     
     try:
         resp = requests.post(URL, headers=headers, json=payload)
-        # Check for error details returned by API
         if resp.status_code != 200:
             return "", f"API ERROR ({resp.status_code}): {resp.text}"
             
