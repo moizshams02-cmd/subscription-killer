@@ -1,5 +1,5 @@
 from flask import Flask
-# REQUIRED: Vercel needs this top-level instance to detect your app
+# REQUIRED: Top-level instance for Vercel
 app = Flask(__name__)
 
 from flask import render_template_string, request
@@ -12,7 +12,6 @@ import json
 API_KEY = os.environ.get("API_KEY")
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Simple UI for interaction
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -23,10 +22,10 @@ HTML_TEMPLATE = """
 </style>
 </head>
 <body>
-    <h1>Digital Financial Auditor</h1>
+    <h1>Batch Financial Auditor</h1>
     <form method="post" enctype="multipart/form-data">
-        <input type="file" name="image" accept="image/*" capture="environment" required style="margin-bottom:10px;">
-        <button type="submit" class="btn">AUDIT STATEMENT</button>
+        <input type="file" name="images" accept="image/*" multiple required style="margin-bottom:10px;">
+        <button type="submit" class="btn">AUDIT BATCH</button>
     </form>
     <div style="color: #ff3333; margin-top: 10px;">{{ error }}</div>
     <div>{{ table_html|safe }}</div>
@@ -34,40 +33,44 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def process_data(image_bytes):
+def process_batch(image_list):
     api_key = os.environ.get("API_KEY")
     if not api_key: return "", "CRITICAL: API_KEY missing."
 
-    b64 = base64.b64encode(image_bytes).decode('utf-8')
+    all_results = []
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
-    # Payload structured as a string to satisfy Groq's schema validator
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {
-                "role": "user",
-                "content": f"Extract subscriptions from this image as a JSON list (keys: s=service, a=amount, c=due_date). No markdown. Image data: data:image/jpeg;base64,{b64}"
-            }
-        ]
-    }
-    
-    try:
-        resp = requests.post(URL, headers=headers, json=payload)
-        if resp.status_code != 200:
-            return "", f"API ERROR ({resp.status_code}): {resp.text}"
-            
-        content = resp.json()['choices'][0]['message']['content'].strip()
-        data = json.loads(content)
+    # Process each image in the batch
+    for img_file in image_list:
+        b64 = base64.b64encode(img_file.read()).decode('utf-8')
         
-        rows = "".join([f"<tr><td>{item.get('s', 'N/A')}</td><td>{item.get('a', '0')}</td><td>{item.get('c', 'N/A')}</td></tr>" for item in data])
-        return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Due Date</th></tr></thead><tbody>{rows}</tbody></table>", ""
-    except Exception as e:
-        return "", f"DEBUG ERROR: {str(e)}"
+        payload = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Extract subscriptions as JSON list (keys: s, a, c). No markdown. Image: data:image/jpeg;base64,{b64}"
+                }
+            ]
+        }
+        
+        try:
+            resp = requests.post(URL, headers=headers, json=payload)
+            if resp.status_code == 200:
+                content = resp.json()['choices'][0]['message']['content'].strip()
+                all_results.extend(json.loads(content))
+        except:
+            continue
+            
+    # Format all results into one table
+    rows = "".join([f"<tr><td>{item.get('s', 'N/A')}</td><td>{item.get('a', '0')}</td><td>{item.get('c', 'N/A')}</td></tr>" for item in all_results])
+    return f"<table><thead><tr><th>Service</th><th>Amount</th><th>Due Date</th></tr></thead><tbody>{rows}</tbody></table>", ""
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     table, err = "", ""
-    if request.method == 'POST' and 'image' in request.files:
-        table, err = process_data(request.files['image'].read())
+    if request.method == 'POST':
+        # Retrieve the list of files
+        images = request.files.getlist("images")
+        table, err = process_batch(images)
     return render_template_string(HTML_TEMPLATE, table_html=table, error=err)
