@@ -1,5 +1,5 @@
 from flask import Flask
-# 1. TOP-LEVEL APP INSTANCE REQUIRED BY VERCEL
+# Top-level 'app' instance is required by Vercel
 app = Flask(__name__)
 
 from flask import render_template_string, request
@@ -40,7 +40,7 @@ def process_data(image_bytes):
     b64 = base64.b64encode(image_bytes).decode('utf-8')
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     
-    # 2. UPDATED TO A SUPPORTED MODEL
+    # Payload structure fix: 'content' must be a list of objects for vision
     payload = {
         "model": "llama-3.3-70b-versatile",
         "messages": [
@@ -56,6 +56,7 @@ def process_data(image_bytes):
     
     try:
         resp = requests.post(URL, headers=headers, json=payload)
+        # Check for error details returned by API
         if resp.status_code != 200:
             return "", f"API ERROR ({resp.status_code}): {resp.text}"
             
