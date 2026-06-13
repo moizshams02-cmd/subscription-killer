@@ -4,14 +4,14 @@ import requests
 import os
 import json
 
-# Top-level Flask instance - Required by Vercel
+# Initialize Flask
 app = Flask(__name__)
 
 # Configuration
 API_KEY = os.environ.get("API_KEY")
 URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# UI Template
+# HTML Template
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -36,19 +36,19 @@ HTML_TEMPLATE = """
 """
 
 def process_data(image_bytes):
-    if not API_KEY: return "", "CRITICAL: API_KEY missing in Vercel settings."
+    if not API_KEY: return "", "CRITICAL: API_KEY missing in environment variables."
 
     b64 = base64.b64encode(image_bytes).decode('utf-8')
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     
-    # Corrected Payload Structure for Groq Vision models
+    # Payload for Groq Vision
     payload = {
-        "model": "llama-3.2-11b-vision-preview",
+        "model": "llama-3.2-90b-vision-preview",
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Extract all recurring subscriptions as a JSON list. For each, include 's' (Service), 'a' (Amount), 'c' (Strategy). Output ONLY valid JSON, no markdown code blocks."},
+                    {"type": "text", "text": "Extract all subscriptions as a JSON list. Keys: 's' (Service), 'a' (Amount), 'c' (Strategy). No markdown."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                 ]
             }
