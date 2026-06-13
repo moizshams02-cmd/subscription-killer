@@ -12,8 +12,8 @@ HTML_TEMPLATE = """
 <body style="font-family:sans-serif; background:#000; color:#fff; padding:20px;">
     <h2>Financial Auditor</h2>
     <form id="u">
-        <input type="file" id="f" accept="image/*" required>
-        <button type="submit" id="b" style="padding:10px; width:100%;">AUDIT STATEMENT</button>
+        <input type="file" id="f" accept="image/*" multiple required>
+        <button type="submit" id="b" style="padding:10px; width:100%;">AUDIT ALL</button>
     </form>
     <div id="r" style="margin-top:20px;"></div>
     <script>
@@ -22,18 +22,13 @@ HTML_TEMPLATE = """
             const btn = document.getElementById('b');
             const resDiv = document.getElementById('r');
             btn.disabled = true;
-            resDiv.innerText = "Analyzing...";
-            
-            const file = document.getElementById('f').files[0];
-            const bmp = await createImageBitmap(file);
-            const canvas = document.createElement('canvas');
-            const scale = Math.min(600 / bmp.width, 1);
-            canvas.width = bmp.width * scale; canvas.height = bmp.height * scale;
-            canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.5));
+            resDiv.innerText = "Analyzing batch... (this may take 10-15s)";
             
             const fd = new FormData();
-            fd.append('i', blob);
+            const files = document.getElementById('f').files;
+            for (let i = 0; i < files.length; i++) {
+                fd.append('images', files[i]);
+            }
             
             try {
                 const res = await fetch('/', { method: 'POST', body: fd });
@@ -51,22 +46,28 @@ def index():
     if request.method == 'GET': return render_template_string(HTML_TEMPLATE)
     
     api_key = os.environ.get('API_KEY')
-    if not api_key: return "Server Error: API_KEY not set."
+    results_html = "<h3>Audit Results:</h3>"
     
-    try:
-        img = request.files.get("i")
-        b64 = base64.b64encode(img.read()).decode('utf-8')
-        
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [{"role": "user", "content": f"Extract rows as JSON: [{'s':'desc','a':'amt','c':'date'}]. No markdown. Data: data:image/jpeg;base64,{b64}"}]
-        }
-        
-        resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
-                             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
-                             json=payload, timeout=9)
-        
-        data = json.loads(resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', ''))
-        return "".join([f"<div style='border-bottom:1px solid #333; padding:5px;'>{i.get('s')} | {i.get('a')} | {i.get('c')}</div>" for i in data])
-    except Exception as e:
-        return f"Extraction Failed: {str(e)}"
+    for img in request.files.getlist("images"):
+        try:
+            b64 = base64.b64encode(img.read()).decode('utf-8')
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [{"role": "user", "content": f"Extract table rows. Return ONLY a valid JSON list of objects with keys 's', 'a', and 'c'. Example: [{{'s':'desc','a':'amt','c':'date'}}]. Do not wrap in markdown. Image data: data:image/jpeg;base64,{b64}"}]
+            }
+            
+            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
+                                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
+                                 json=payload, timeout=25)
+            
+            content = resp.json()['choices'][0]['message']['content'].strip()
+            # Clean potential markdown artifacts
+            clean_content = content.replace('```json', '').replace('```', '').strip()
+            data = json.loads(clean_content)
+            
+            for item in data:
+                results_html += f"<div style='border-bottom:1px solid #444; padding:5px;'>{item.get('s', 'N/A')} | {item.get('a', 'N/A')} | {item.get('c', 'N/A')}</div>"
+        except Exception as e:
+            results_html += f"<div style='color:red;'>Failed to process an image: {str(e)}</div>"
+            
+    return results_html
