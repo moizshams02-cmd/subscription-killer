@@ -13,28 +13,26 @@ HTML_TEMPLATE = """
     <h2>Financial Auditor</h2>
     <form id="u">
         <input type="file" id="f" accept="image/*" multiple required>
-        <button type="submit" style="padding:10px;">Process</button>
+        <button type="submit" style="padding:10px;">Audit</button>
     </form>
-    <div id="s"></div>
-    <div id="r"></div>
+    <div id="r" style="margin-top:20px;"></div>
     <script>
         document.getElementById('u').onsubmit = async (e) => {
             e.preventDefault();
-            document.getElementById('s').innerText = "Compressing/Uploading...";
-            const files = document.getElementById('f').files;
+            document.getElementById('r').innerText = "Processing...";
             const fd = new FormData();
-            for (let file of files) {
+            for (let file of document.getElementById('f').files) {
                 const b = await createImageBitmap(file);
                 const c = document.createElement('canvas');
-                const scale = Math.min(800 / b.width, 1);
-                c.width = b.width * scale; c.height = b.height * scale;
+                // Extremely aggressive resizing to prevent timeouts
+                const s = Math.min(600 / b.width, 1);
+                c.width = b.width * s; c.height = b.height * s;
                 c.getContext('2d').drawImage(b, 0, 0, c.width, c.height);
-                const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.6));
+                const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.5));
                 fd.append('i', blob);
             }
             const res = await fetch('/', { method: 'POST', body: fd });
             document.getElementById('r').innerHTML = await res.text();
-            document.getElementById('s').innerText = "Done.";
         };
     </script>
 </body>
@@ -43,21 +41,35 @@ HTML_TEMPLATE = """
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'POST':
-        images = request.files.getlist("i")
-        results = []
-        for img in images:
+    if request.method == 'GET': return render_template_string(HTML_TEMPLATE)
+    
+    api_key = os.environ.get('API_KEY')
+    if not api_key: return "Server Error: API_KEY not set."
+    
+    results_display = ""
+    for img in request.files.getlist("i"):
+        try:
             b64 = base64.b64encode(img.read()).decode('utf-8')
             payload = {
                 "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": f"Extract table data as JSON list: [{'s':'desc','a':'amt','c':'date'}]. No markdown. Image data: data:image/jpeg;base64,{b64}"}]
+                "messages": [{"role": "user", "content": f"Extract rows. JSON list only: [{'s':'desc','a':'amt','c':'date'}]. NO EXTRA TEXT. Data: data:image/jpeg;base64,{b64}"}]
             }
-            try:
-                resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
-                                     headers={"Authorization": f"Bearer {os.environ.get('API_KEY')}", "Content-Type": "application/json"}, 
-                                     json=payload)
-                data = json.loads(resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', ''))
-                results.extend(data)
-            except: continue
-        return "".join([f"<div>{i.get('s')} | {i.get('a')} | {i.get('c')}</div>" for i in results])
-    return render_template_string(HTML_TEMPLATE)
+            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
+                                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
+                                 json=payload, timeout=8) # 8 second timeout to avoid Vercel limit
+            
+            if resp.status_code != 200:
+                results_display += f"API Error {resp.status_code}: {resp.text[:50]}...<br>"
+                continue
+                
+            raw = resp.json()['choices'][0]['message']['content'].strip()
+            # Extremely aggressive JSON cleaning
+            clean = raw[raw.find('['):raw.rfind(']')+1]
+            data = json.loads(clean)
+            
+            for i in data:
+                results_display += f"<div>{i.get('s')} | {i.get('a')} | {i.get('c')}</div>"
+        except Exception as e:
+            results_display += f"Extraction Error: {str(e)}<br>"
+            
+    return results_display
