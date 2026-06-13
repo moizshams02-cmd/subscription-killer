@@ -4,43 +4,35 @@ import requests
 import os
 import json
 
-# Required: Vercel needs 'app' to be the entry point
 app = Flask(__name__)
 
+# Minimal HTML to keep the payload size tiny
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="font-family:sans-serif; background:#000; color:#fff; padding:20px;">
     <h2>Financial Auditor</h2>
-    <form id="uploadForm">
+    <form id="u">
         <input type="file" id="f" accept="image/*" multiple required>
-        <button type="submit" id="btn" style="padding:10px; width:100%;">START AUDIT</button>
+        <button type="submit" id="b" style="padding:10px;">AUDIT</button>
     </form>
-    <div id="status" style="margin-top:10px;"></div>
-    <div id="results" style="margin-top:10px;"></div>
+    <div id="r" style="margin-top:20px;"></div>
     <script>
-        document.getElementById('uploadForm').onsubmit = async (e) => {
+        document.getElementById('u').onsubmit = async (e) => {
             e.preventDefault();
-            const btn = document.getElementById('btn');
-            const status = document.getElementById('status');
+            const btn = document.getElementById('b');
+            const resDiv = document.getElementById('r');
             btn.disabled = true;
-            status.innerText = "Analyzing... (do not leave page)";
-            
+            resDiv.innerText = "Analyzing...";
             const fd = new FormData();
             for (let file of document.getElementById('f').files) {
-                fd.append('images', file);
+                fd.append('i', file);
             }
-            
             try {
                 const res = await fetch('/', { method: 'POST', body: fd });
-                document.getElementById('results').innerHTML = await res.text();
-            } catch (err) {
-                document.getElementById('results').innerHTML = "Error: " + err.message;
-            } finally {
-                btn.disabled = false;
-                status.innerText = "Finished.";
-            }
+                resDiv.innerHTML = await res.text();
+            } catch(e) { resDiv.innerText = "Error: " + e.message; }
+            btn.disabled = false;
         };
     </script>
 </body>
@@ -52,24 +44,22 @@ def index():
     if request.method == 'GET': return render_template_string(HTML_TEMPLATE)
     
     api_key = os.environ.get('API_KEY')
-    if not api_key: return "Server Error: API_KEY missing."
+    # Limit processing to ONLY the first image to save time/memory
+    img = request.files.getlist("i")[0] 
     
-    output = "<h3>Results:</h3>"
-    for img in request.files.getlist("images"):
-        try:
-            b64 = base64.b64encode(img.read()).decode('utf-8')
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": f"Extract the table. Return ONLY a JSON list of objects: [{'s': 'Description', 'a': 'Amount', 'c': 'Date'}]. No extra text. Data: data:image/jpeg;base64,{b64}"}]
-            }
-            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
-                                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
-                                 json=payload, timeout=20)
-            
-            data = json.loads(resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', ''))
-            for item in data:
-                output += f"<div style='border:1px solid #444; padding:5px;'>{item.get('s')} | {item.get('a')} | {item.get('c')}</div>"
-        except Exception as e:
-            output += f"<div>Extraction Error: {str(e)}</div>"
-            
-    return output
+    try:
+        b64 = base64.b64encode(img.read()).decode('utf-8')
+        # Instruct AI to be extremely brief to save token processing time
+        payload = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "user", "content": f"Extract rows as simple JSON list: [{'s':'desc','a':'amt','c':'date'}]. No markdown. Image: data:image/jpeg;base64,{b64}"}]
+        }
+        # Use a short timeout for the API call
+        resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
+                             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
+                             json=payload, timeout=7)
+        
+        data = json.loads(resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', ''))
+        return "".join([f"<div>{i.get('s')} | {i.get('a')} | {i.get('c')}</div>" for i in data])
+    except Exception as e:
+        return f"Process failed: {str(e)}"
