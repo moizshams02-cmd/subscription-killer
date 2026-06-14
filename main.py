@@ -4,7 +4,7 @@ import requests
 import json
 import os
 
-# TOP LEVEL: This is required for Vercel to detect the app
+# Essential: app must be defined at the top level for Vercel
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
@@ -30,7 +30,7 @@ HTML_TEMPLATE = """
                 if (i > 0) await new Promise(r => setTimeout(r, 3000)); // 3s cooldown
                 resDiv.innerHTML += `<div>Processing ${files[i].name}...</div>`;
                 
-                // Resizing logic to prevent "Request too large" (413)
+                // Resizing to 600px prevents 413 "Request too large" errors
                 const bmp = await createImageBitmap(files[i]);
                 const canvas = document.createElement('canvas');
                 const scale = Math.min(600 / bmp.width, 1);
