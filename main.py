@@ -4,17 +4,17 @@ import requests
 import json
 import os
 
-# DEFINED AT TOP-LEVEL: Required for Vercel
+# TOP LEVEL: This is required for Vercel to detect the app
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <body style="font-family:sans-serif; background:#000; color:#fff; padding:20px;">
-    <h2>Financial Auditor</h2>
+    <h2 style="color:#0f0;">Financial Auditor</h2>
     <form id="u">
         <input type="file" id="f" accept="image/*" capture="environment" multiple required>
-        <button type="submit" id="b" style="padding:15px; width:100%; background:#0f0; color:#000; border:none;">AUDIT ALL</button>
+        <button type="submit" id="b" style="padding:15px; width:100%; background:#333; color:#fff; border:none;">AUDIT ALL</button>
     </form>
     <div id="r" style="margin-top:20px;"></div>
     <script>
@@ -27,10 +27,10 @@ HTML_TEMPLATE = """
             const files = document.getElementById('f').files;
             
             for (let i = 0; i < files.length; i++) {
-                if (i > 0) await new Promise(r => setTimeout(r, 3000)); // Delay to respect Rate Limits
+                if (i > 0) await new Promise(r => setTimeout(r, 3000)); // 3s cooldown
                 resDiv.innerHTML += `<div>Processing ${files[i].name}...</div>`;
                 
-                // Resizing to 600px prevents 413 "Request too large" errors
+                // Resizing logic to prevent "Request too large" (413)
                 const bmp = await createImageBitmap(files[i]);
                 const canvas = document.createElement('canvas');
                 const scale = Math.min(600 / bmp.width, 1);
@@ -59,7 +59,7 @@ def index():
         b64 = base64.b64encode(img.read()).decode('utf-8')
         payload = {
             "model": "llama-3.3-70b-versatile",
-            "messages": [{"role": "user", "content": "Extract JSON list [{'s':'desc','a':'amt','c':'date'}]. No markdown. Image: data:image/jpeg;base64," + b64}]
+            "messages": [{"role": "user", "content": "Extract data: [{'s':'desc','a':'amt','c':'date'}]. No markdown. Image: data:image/jpeg;base64," + b64}]
         }
         resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
                              headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
@@ -70,6 +70,6 @@ def index():
             content = result['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
             data = json.loads(content)
             return "".join([f"<div>{i.get('s','-')} | {i.get('a','-')} | {i.get('c','-')}</div>" for i in data])
-        return f"API Error: {result.get('error', {}).get('message', 'Unknown Error')}"
+        return "API Error occurred. Please try again."
     except Exception as e:
         return f"Error: {str(e)}"
