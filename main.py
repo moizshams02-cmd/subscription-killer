@@ -4,6 +4,7 @@ import requests
 import json
 import os
 
+# Essential: Vercel needs this 'app' defined here to successfully build
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
@@ -11,27 +12,21 @@ HTML_TEMPLATE = """
 <html>
 <body style="background:#000; color:#fff; padding:20px; font-family:sans-serif;">
     <h2>Financial Auditor</h2>
-    <div style="margin-top:20px;">
-        <input type="file" id="f" accept="image/*" style="display:block; margin-bottom:10px;">
-        <button onclick="audit()" style="padding:10px 20px; background:#0f0; border:none; cursor:pointer;">START AUDIT</button>
-    </div>
-    <div id="r" style="margin-top:20px; white-space:pre-wrap;"></div>
+    <input type="file" id="f" accept="image/*">
+    <button onclick="audit()">START AUDIT</button>
+    <div id="r"></div>
     <script>
         async function audit() {
-            const file = document.getElementById('f').files[0];
             const r = document.getElementById('r');
-            if(!file) { alert("Select an image first!"); return; }
             r.innerHTML = "Processing...";
-            
+            const file = document.getElementById('f').files[0];
+            // Shrink image to 400px to avoid "Request too large" errors
             const b = await createImageBitmap(file);
             const c = document.createElement('canvas');
-            // Shrink to 400px to avoid 'Request too large' errors
             const s = Math.min(400 / b.width, 1);
             c.width = b.width * s; c.height = b.height * s;
             c.getContext('2d').drawImage(b, 0, 0, c.width, c.height);
-            // Compress quality to 0.4 to avoid 'Rate limit exceeded' errors
-            const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.4));
-            
+            const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.2));
             const fd = new FormData();
             fd.append('i', blob);
             const res = await fetch('/', { method: 'POST', body: fd });
@@ -50,20 +45,18 @@ def index():
         payload = {
             "model": "llama-3.1-8b-instant",
             "messages": [
-                {"role": "system", "content": "Extract: desc (s), amount (a), date (c). JSON list only: [{'s':'..','a':'..','c':'..'}]."},
-                {"role": "user", "content": "Extract data: data:image/jpeg;base64," + b64}
+                {"role": "system", "content": "Return ONLY a JSON list: [{'s':'desc','a':'amt','c':'date'}]."},
+                {"role": "user", "content": "Extract: data:image/jpeg;base64," + b64}
             ]
         }
         resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
                              headers={"Authorization": f"Bearer {os.environ.get('API_KEY')}", "Content-Type": "application/json"}, 
                              json=payload)
         
-        response_data = resp.json()
-        
-        # Check for success before parsing
-        if 'choices' in response_data:
-            content = response_data['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
+        result = resp.json()
+        if 'choices' in result:
+            content = result['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
             data = json.loads(content)
-            return "".join([f"<div>{i.get('s','-')} | {i.get('a','-')} | {i.get('c','-')}</div>" for i in data])
-        else:
-            return f"API Error: {response_data.get('error', {}).get('message', 'Unknown Error')}"
+            return "".join([f"<div>{i.get('s')} | {i.get('a')} | {i.get('c')}</div>" for i in data])
+        return "API Error: " + str(result.get('error', 'Unknown'))
+    except Exception as e: return "Error: " + str(e)
