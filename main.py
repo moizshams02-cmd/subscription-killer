@@ -6,7 +6,6 @@ import os
 
 app = Flask(__name__)
 
-# This updated HTML keeps the user on the page and prevents gallery-nav issues
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -21,15 +20,15 @@ HTML_TEMPLATE = """
         async function audit() {
             const file = document.getElementById('f').files[0];
             const r = document.getElementById('r');
-            if(!file) { alert("Please select an image first!"); return; }
-            r.innerHTML = "Processing... please wait.";
+            if(!file) { alert("Select an image first!"); return; }
+            r.innerHTML = "Auditing...";
             
             const b = await createImageBitmap(file);
             const c = document.createElement('canvas');
-            const s = 400 / b.width;
-            c.width = 400; c.height = b.height * s;
-            c.getContext('2d').drawImage(b, 0, 0, 400, b.height * s);
-            const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.1));
+            const s = Math.min(600 / b.width, 1);
+            c.width = b.width * s; c.height = b.height * s;
+            c.getContext('2d').drawImage(b, 0, 0, c.width, c.height);
+            const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.5));
             
             const fd = new FormData();
             fd.append('i', blob);
@@ -48,15 +47,18 @@ def index():
         b64 = base64.b64encode(request.files.get("i").read()).decode('utf-8')
         payload = {
             "model": "llama-3.1-8b-instant",
-            "messages": [{"role": "system", "content": "Return ONLY JSON: [{'s':'desc','a':'amt','c':'date'}]"},
-                         {"role": "user", "content": "data:image/jpeg;base64," + b64}]
+            "messages": [
+                {"role": "system", "content": "Extract data: desc (s), amount (a), date (c). Return ONLY JSON list: [{'s':'..','a':'..','c':'..'}]."},
+                {"role": "user", "content": "data:image/jpeg;base64," + b64}
+            ]
         }
         resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
                              headers={"Authorization": f"Bearer {os.environ.get('API_KEY')}", "Content-Type": "application/json"}, 
                              json=payload)
         
-        # Clean response to ensure it parses correctly
         content = resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
         data = json.loads(content)
-        return "".join([f"<div>{i.get('s')} | {i.get('a')} | {i.get('c')}</div>" for i in data])
+        
+        if not data: return "No data found."
+        return "".join([f"<div>{i.get('s','-')} | {i.get('a','-')} | {i.get('c','-')}</div>" for i in data])
     except Exception as e: return f"Error: {str(e)}"
