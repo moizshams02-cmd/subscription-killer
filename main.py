@@ -4,7 +4,6 @@ import requests
 import json
 import os
 
-# DEFINED AT TOP-LEVEL: This fixes your "Could not find app" error
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
@@ -28,14 +27,15 @@ HTML_TEMPLATE = """
             
             for (let i = 0; i < files.length; i++) {
                 if (i > 0) await new Promise(r => setTimeout(r, 3000));
-                resDiv.innerHTML += `<div>Processing image ${i+1}...</div>`;
+                resDiv.innerHTML += `<div>Processing ${files[i].name}...</div>`;
                 
+                // RESIZE LOGIC: Shrink to 800px width to prevent 413 Errors
                 const bmp = await createImageBitmap(files[i]);
                 const canvas = document.createElement('canvas');
-                const scale = Math.min(400 / bmp.width, 1);
+                const scale = Math.min(800 / bmp.width, 1);
                 canvas.width = bmp.width * scale; canvas.height = bmp.height * scale;
                 canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
-                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.2));
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.5));
                 
                 const fd = new FormData();
                 fd.append('i', blob);
@@ -51,20 +51,16 @@ HTML_TEMPLATE = """
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == 'GET':
-        return render_template_string(HTML_TEMPLATE)
+    if request.method == 'GET': return render_template_string(HTML_TEMPLATE)
     
     api_key = os.environ.get('API_KEY')
-    if not api_key: return "Server Error: API_KEY missing."
-    
     try:
         img = request.files.get("i")
         b64 = base64.b64encode(img.read()).decode('utf-8')
         
-        prompt = "Extract rows as JSON list. Keys: 's','a','c'. Example: [{'s':'desc','a':'amt','c':'date'}]. No markdown."
         payload = {
             "model": "llama-3.3-70b-versatile",
-            "messages": [{"role": "user", "content": prompt + " Data: data:image/jpeg;base64," + b64}]
+            "messages": [{"role": "user", "content": "Extract statement data as JSON list [{'s':'desc','a':'amt','c':'date'}]. No markdown." + " Image: data:image/jpeg;base64," + b64}]
         }
         
         resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
