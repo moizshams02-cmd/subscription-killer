@@ -21,14 +21,16 @@ HTML_TEMPLATE = """
             const file = document.getElementById('f').files[0];
             const r = document.getElementById('r');
             if(!file) { alert("Select an image first!"); return; }
-            r.innerHTML = "Auditing...";
+            r.innerHTML = "Processing...";
             
             const b = await createImageBitmap(file);
             const c = document.createElement('canvas');
-            const s = Math.min(600 / b.width, 1);
+            // Shrink to 400px to avoid 'Request too large' errors
+            const s = Math.min(400 / b.width, 1);
             c.width = b.width * s; c.height = b.height * s;
             c.getContext('2d').drawImage(b, 0, 0, c.width, c.height);
-            const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.5));
+            // Compress quality to 0.4 to avoid 'Rate limit exceeded' errors
+            const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.4));
             
             const fd = new FormData();
             fd.append('i', blob);
@@ -48,17 +50,20 @@ def index():
         payload = {
             "model": "llama-3.1-8b-instant",
             "messages": [
-                {"role": "system", "content": "Extract data: desc (s), amount (a), date (c). Return ONLY JSON list: [{'s':'..','a':'..','c':'..'}]."},
-                {"role": "user", "content": "data:image/jpeg;base64," + b64}
+                {"role": "system", "content": "Extract: desc (s), amount (a), date (c). JSON list only: [{'s':'..','a':'..','c':'..'}]."},
+                {"role": "user", "content": "Extract data: data:image/jpeg;base64," + b64}
             ]
         }
         resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
                              headers={"Authorization": f"Bearer {os.environ.get('API_KEY')}", "Content-Type": "application/json"}, 
                              json=payload)
         
-        content = resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
-        data = json.loads(content)
+        response_data = resp.json()
         
-        if not data: return "No data found."
-        return "".join([f"<div>{i.get('s','-')} | {i.get('a','-')} | {i.get('c','-')}</div>" for i in data])
-    except Exception as e: return f"Error: {str(e)}"
+        # Check for success before parsing
+        if 'choices' in response_data:
+            content = response_data['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
+            data = json.loads(content)
+            return "".join([f"<div>{i.get('s','-')} | {i.get('a','-')} | {i.get('c','-')}</div>" for i in data])
+        else:
+            return f"API Error: {response_data.get('error', {}).get('message', 'Unknown Error')}"
