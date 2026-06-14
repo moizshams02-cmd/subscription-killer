@@ -4,28 +4,33 @@ import requests
 import json
 import os
 
-app = Flask(__name__) # Must be at the top level
+# DEFINED AT TOP-LEVEL: Required for Vercel
+app = Flask(__name__)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<body style="background:#000; color:#fff; padding:20px;">
+<body style="font-family:sans-serif; background:#000; color:#fff; padding:20px;">
     <h2>Financial Auditor</h2>
     <form id="u">
         <input type="file" id="f" accept="image/*" capture="environment" multiple required>
-        <button type="submit" id="b" style="padding:15px; width:100%;">START AUDIT</button>
+        <button type="submit" id="b" style="padding:15px; width:100%; background:#0f0; color:#000; border:none;">AUDIT ALL</button>
     </form>
-    <div id="r"></div>
+    <div id="r" style="margin-top:20px;"></div>
     <script>
         document.getElementById('u').onsubmit = async (e) => {
             e.preventDefault();
-            const files = document.getElementById('f').files;
+            const btn = document.getElementById('b');
             const resDiv = document.getElementById('r');
+            btn.disabled = true;
+            resDiv.innerHTML = "";
+            const files = document.getElementById('f').files;
+            
             for (let i = 0; i < files.length; i++) {
-                // Wait 3 seconds between images to respect Rate Limits
-                if (i > 0) await new Promise(r => setTimeout(r, 3000));
+                if (i > 0) await new Promise(r => setTimeout(r, 3000)); // Delay to respect Rate Limits
+                resDiv.innerHTML += `<div>Processing ${files[i].name}...</div>`;
                 
-                // Resize in browser to prevent "Payload Too Large"
+                // Resizing to 600px prevents 413 "Request too large" errors
                 const bmp = await createImageBitmap(files[i]);
                 const canvas = document.createElement('canvas');
                 const scale = Math.min(600 / bmp.width, 1);
@@ -38,6 +43,7 @@ HTML_TEMPLATE = """
                 const res = await fetch('/', { method: 'POST', body: fd });
                 resDiv.innerHTML += await res.text() + "<hr>";
             }
+            btn.disabled = false;
         };
     </script>
 </body>
@@ -51,12 +57,19 @@ def index():
     try:
         img = request.files.get("i")
         b64 = base64.b64encode(img.read()).decode('utf-8')
-        # Simplified prompt to reduce token count
-        payload = {"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": "Extract JSON [{'s':'desc','a':'amt','c':'date'}]. Image: data:image/jpeg;base64," + b64}]}
-        resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=payload, timeout=25)
-        res = resp.json()
-        content = res['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
-        data = json.loads(content)
-        return "".join([f"<div>{i.get('s','-')} | {i.get('a','-')} | {i.get('c','-')}</div>" for i in data])
+        payload = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "user", "content": "Extract JSON list [{'s':'desc','a':'amt','c':'date'}]. No markdown. Image: data:image/jpeg;base64," + b64}]
+        }
+        resp = requests.post("https://api.groq.com/openai/v1/chat/completions", 
+                             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, 
+                             json=payload, timeout=25)
+        
+        result = resp.json()
+        if 'choices' in result:
+            content = result['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
+            data = json.loads(content)
+            return "".join([f"<div>{i.get('s','-')} | {i.get('a','-')} | {i.get('c','-')}</div>" for i in data])
+        return f"API Error: {result.get('error', {}).get('message', 'Unknown Error')}"
     except Exception as e:
-        return f"API Error"
+        return f"Error: {str(e)}"
